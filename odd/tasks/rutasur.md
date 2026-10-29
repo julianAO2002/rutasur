@@ -20,11 +20,11 @@ Branch: `feat/rutasur` · Delivery: single-pr (separate repo, user decides push/
 
 | ID | Specs | Route | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| T1 | S1–S3, S10 | inline | done | compose + shared lib |
-| T2 | S4 | inline | done | simulator + unit tests |
-| T3 | S5–S8 | inline | done | five consumers + replay consumer + unit tests |
-| T4 | S9 | inline | done | Next.js app |
-| T5 | S1–S10 | inline | done | `docker compose up -d --build` + e2e verification |
+| T1 | S1–S3, S10 | inline | done | 969dfe6 compose + shared lib |
+| T2 | S4 | inline | done | 969dfe6 simulator + unit tests (22/22) |
+| T3 | S5–S8 | inline | done | 969dfe6 consumers + replay consumer |
+| T4 | S9 | inline | done | 62bd702 Next.js app (next build OK) |
+| T5 | S1–S10 | inline | done | e2e + demorado OK; recuento OK; huella envios igual tras reconstruir; replay 51 envios |
 
 Route evidence: no Writer trigger fired (single coherent design, no disjoint parallel units worth a subagent); work stays inline.
 
@@ -32,3 +32,6 @@ Route evidence: no Writer trigger fired (single coherent design, no disjoint par
 
 - L1 (2026-10-29): "realizar tp7 en un repo aparte que haga alucion a la app, y que corra sobre docker"
 - L2: TP7 identified as `FACU/TP7_RutaSur_especificacion_del_caso_practico.pdf` (Programación Avanzada 2026). Repo created at `FACU/rutasur`. Engram mirror pending (memory tools unavailable in this session).
+- L3: Host port 3000 is taken by another local project; host ports made configurable (WEB_PORT, KAFKA_UI_PORT, SIMULADOR_PORT). Verified on WEB_PORT=3100.
+- L4: Evidence: unit tests 22/22; e2e verificar.js all OK (latency to MongoDB 1.0 s); stopping notificaciones + monitor-sla grew lag to 62/77, restart drained to 0, 11 failures → 11 notices, no duplicates.
+- L5: Evidence: verificar.js --con-demorado all OK (SIN_SALIDA/ALTA opened and closed on delivery). Fresh `down -v` + `up --build`: recuento.js "OK: los indicadores coinciden" (299 eventos); envios rebuild 113 docs, same hash and identical dumps (hash now canonicalizes key order); analitica-tiempos replay filled 51 historical shipments. gentle-ai assess: risk medium, review_due=false (under_budget).

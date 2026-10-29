@@ -8,6 +8,19 @@ import { crearKafka } from '../lib/kafka.js';
 import { conectarMongo } from '../lib/mongo.js';
 
 const comando = process.argv[2];
+
+/** JSON con las claves ordenadas, para comparar documentos sin depender del orden de los campos. */
+const canonico = (v) =>
+  v instanceof Date
+    ? JSON.stringify(v)
+    : Array.isArray(v)
+      ? `[${v.map(canonico).join(',')}]`
+      : v && typeof v === 'object'
+        ? `{${Object.keys(v)
+            .sort()
+            .map((k) => `${JSON.stringify(k)}:${canonico(v[k])}`)
+            .join(',')}}`
+        : JSON.stringify(v);
 const { client, db } = await conectarMongo();
 const envios = db.collection('envios');
 
@@ -15,9 +28,10 @@ if (comando === 'huella') {
   const docs = await envios.find({}, { projection: { _id: 0 } }).sort({ shipmentId: 1 }).toArray();
   const hash = createHash('sha256');
   for (const doc of docs) {
-    // El historial se ordena porque estados y reprogramaciones llegan por topics distintos.
+    // Estados y reprogramaciones llegan por topics distintos: el orden del historial y el de
+    // los campos del documento dependen del intercalado, no del contenido. Se normalizan ambos.
     doc.historial?.sort((a, b) => a.eventId.localeCompare(b.eventId));
-    hash.update(JSON.stringify(doc));
+    hash.update(canonico(doc));
   }
   console.log(`envios=${docs.length} huella=${hash.digest('hex')}`);
 } else if (comando === 'reconstruir') {
