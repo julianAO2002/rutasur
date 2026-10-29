@@ -1,0 +1,24 @@
+{
+  "name": "rutasur-services",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Servicios Node.js de RutaSur: simulador, proyector, notificaciones, reprogramacion, monitor de SLA y analitica",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "simulador": "node src/simulador/index.js",
+    "proyector": "node src/proyector/index.js",
+    "notificaciones": "node src/notificaciones/index.js",
+    "reprogramacion": "node src/reprogramacion/index.js",
+    "monitor-sla": "node src/monitor-sla/index.js",
+    "analitica": "node src/analitica/index.js",
+    "analitica-tiempos": "node src/analitica-tiempos/index.js"
+  },
+  "dependencies": {
+    "kafkajs": "2.2.4",
+    "mongodb": "6.21.0"
+  }
+}

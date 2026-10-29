@@ -1,0 +1,146 @@
+name: rutasur
+
+x-servicio: &servicio
+  build: ./services
+  image: rutasur-services
+  restart: unless-stopped
+  environment: &entorno
+    KAFKA_BROKERS: kafka:9092
+    MONGO_URL: mongodb://mongo:27017/?replicaSet=rs0
+    MONGO_DB: rutasur
+    FACTOR_ACELERACION: ${FACTOR_ACELERACION:-120}
+  depends_on: &dependencias
+    kafka-init:
+      condition: service_completed_successfully
+    mongo:
+      condition: service_healthy
+
+services:
+  # --- Infraestructura ------------------------------------------------------------------
+  kafka:
+    image: apache/kafka:3.9.0
+    hostname: kafka
+    restart: unless-stopped
+    ports:
+      - "9094:9094"
+    environment:
+      # Un broker en modo KRaft: broker y controller en el mismo contenedor, sin ZooKeeper.
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 15s
+      start_period: 15s
+      retries: 12
+
+  kafka-init:
+    build: ./services
+    image: rutasur-services
+    command: ["node", "src/init/topics.js"]
+    environment:
+      KAFKA_BROKERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+
+  mongo:
+    image: mongo:7.0
+    hostname: mongo
+    restart: unless-stopped
+    # Replica set de un nodo: lo exigen los change streams y las transacciones.
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - "try { rs.status().ok } catch (e) { rs.initiate({ _id: 'rs0', members: [{ _id: 0, host: 'mongo:27017' }] }).ok }"
+      interval: 5s
+      timeout: 10s
+      start_period: 10s
+      retries: 20
+
+  # --- Servicios Node.js (cada uno es un proceso y un grupo de consumidores) ----------------
+  simulador:
+    <<: *servicio
+    command: ["node", "src/simulador/index.js"]
+    ports:
+      - "${SIMULADOR_PORT:-4000}:4000"
+    environment:
+      <<: *entorno
+      SEMILLA: ${SEMILLA:-2026}
+      ENVIOS_POR_MINUTO: ${ENVIOS_POR_MINUTO:-20}
+      PROB_DEMORA_HUB: ${PROB_DEMORA_HUB:-0.1}
+      PROB_DUPLICADO: ${PROB_DUPLICADO:-0.02}
+      PROB_FUERA_DE_ORDEN: ${PROB_FUERA_DE_ORDEN:-0.02}
+      PROB_MALFORMADO: ${PROB_MALFORMADO:-0.01}
+      FLUJO_CONTINUO: ${FLUJO_CONTINUO:-true}
+
+  proyector:
+    <<: *servicio
+    command: ["node", "src/proyector/index.js"]
+
+  notificaciones:
+    <<: *servicio
+    command: ["node", "src/notificaciones/index.js"]
+
+  reprogramacion:
+    <<: *servicio
+    command: ["node", "src/reprogramacion/index.js"]
+
+  monitor-sla:
+    <<: *servicio
+    command: ["node", "src/monitor-sla/index.js"]
+
+  analitica:
+    <<: *servicio
+    command: ["node", "src/analitica/index.js"]
+
+  # Cuarto indicador: se activa con el sistema en marcha (docker compose --profile replay up -d).
+  analitica-tiempos:
+    <<: *servicio
+    command: ["node", "src/analitica-tiempos/index.js"]
+    profiles: ["replay"]
+
+  # --- Interfaz ---------------------------------------------------------------------------
+  web:
+    build: ./web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      MONGO_URL: mongodb://mongo:27017/?replicaSet=rs0
+      MONGO_DB: rutasur
+      SIMULADOR_URL: http://simulador:4000
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  # Observabilidad: topics, mensajes (incluida la DLQ) y lag de cada grupo.
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    restart: unless-stopped
+    ports:
+      - "${KAFKA_UI_PORT:-8080}:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: rutasur
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
